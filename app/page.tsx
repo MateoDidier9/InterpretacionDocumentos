@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import Tesseract from "tesseract.js";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf";
 
 export default function Home() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Escaneo de imágenes
+  // Manejo de imágenes
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -17,7 +16,9 @@ export default function Home() {
     setText("Procesando imagen...");
 
     try {
-      const { data: { text } } = await Tesseract.recognize(file, "spa");
+      // Redimensionar imagen para mejorar OCR
+      const resizedBlob = await resizeImage(file);
+      const { data: { text } } = await Tesseract.recognize(resizedBlob, "spa");
       setText(text);
     } catch (error) {
       setText("Error al procesar la imagen");
@@ -27,7 +28,7 @@ export default function Home() {
     }
   };
 
-  // Lectura de PDFs
+  // Manejo de PDFs
   const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -36,6 +37,10 @@ export default function Home() {
     setText("Procesando PDF...");
 
     try {
+      const pdfjsLib = await import("pdfjs-dist/build/pdf");
+      const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.entry");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       let pdfText = "";
@@ -54,6 +59,30 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Función para redimensionar imagen
+  const resizeImage = (file: File, maxWidth = 1024, maxHeight = 1024): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width *= ratio;
+          height *= ratio;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+        }, "image/jpeg", 0.9);
+      };
+      img.src = URL.createObjectURL(file);
+    });
   };
 
   return (
@@ -87,7 +116,7 @@ export default function Home() {
         {loading ? "Procesando..." : "📷 Escanear Imagen"}
       </button>
 
-      {/* Input oculto para PDF */}
+      {/* Input oculto para PDFs */}
       <input
         type="file"
         accept="application/pdf"
